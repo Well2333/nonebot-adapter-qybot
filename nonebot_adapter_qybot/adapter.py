@@ -30,12 +30,13 @@ class Adapter(BaseAdapter):
         self.http_url = f"http://{self.adap_config.qy_host}:{self.adap_config.qy_port}"
         self.bots: Dict[str, Bot] = {}
         self.formatter = MessageFormatter(self)
+        self.task = None
         self.setup()
 
     @classmethod
     @overrides(BaseAdapter)
     def get_name(cls) -> str:
-        return "QY Bot"
+        return "OneBot V11"
 
     def setup(self) -> None:
         if not isinstance(self.driver, ForwardDriver):
@@ -43,7 +44,15 @@ class Adapter(BaseAdapter):
                 f"Current driver {self.config.driver} does not support "
                 "forward connections! QY Bot Adapter need a ForwardDriver to work."
             )
-        self.driver.on_startup(self._forward_ws)
+        self.driver.on_startup(self._startup)
+        self.driver.on_shutdown(self._shutdown)
+
+    async def _startup(self):
+        self.task = asyncio.create_task(self._forward_ws())
+
+    async def _shutdown(self):
+        if self.task:
+            self.task.cancel()
 
     async def _forward_ws(self) -> None:
         request = Request(
@@ -102,21 +111,28 @@ class Adapter(BaseAdapter):
 
     async def _loop(self, ws: WebSocket) -> None:
         """接收并处理事件"""
+        counter = 0
         while True:
+            counter += 1
+            if counter >= 1000:
+                counter = 0
             payload = await ws.receive()
-            Log.trace(
-                f"Received payload: {escape_tag(repr(payload))}",
+            Log.debug(
+                f"[{counter:03}] received payload: {escape_tag(repr(payload))}",
             )
             try:
                 if raw_event := RawEvent.from_json(payload):
+                    event = await raw_event.to_onebot11_event(self.formatter)
+                    Log.debug(f"[{counter:03}] event traslation finished")
                     await self._handle_event(
                         raw_event.botId,
-                        await raw_event.to_onebot11_event(self.formatter),
+                        event=event,
                     )
                 else:
                     Log.warning(
                         f"Unknown payload from server: {escape_tag(repr(payload))}",
                     )
+
             except Exception as e:
                 Log.error(
                     f"Error while parse event to OneBot event: {escape_tag(repr(payload))}",
@@ -181,7 +197,7 @@ class Adapter(BaseAdapter):
                 )
 
     async def post(self, path: str, **data) -> Dict[str, Any]:
-        Log.trace(data)
+        Log.trace(data)  # type: ignore
         path = path.strip("/")
         data = await self.request(
             Request(

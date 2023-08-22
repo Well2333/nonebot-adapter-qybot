@@ -71,26 +71,32 @@ class MessageFormatter:
 
     async def s2m(self, s: str, event: Optional[Union["Event", Dict]]) -> Message:
         segments = []
+        # 找出全部可被处理的富文本
+        pattern = r"(\[@(\d+|all)\])|(\[pic,.+?\])|(\[Reply,.*?SendQQID=(\d+),.*?\])"
+        matches = re.finditer(pattern, s)
 
-        # Split by rich text patterns
-        pattern = r"(\[.*?\])"
-        slices = re.split(pattern, s)
-
-        for segment_str in slices:
-            if not segment_str:
-                continue
-            if qq := re.search(r"\[@(\d+|all)\]", segment_str):  # At segment
-                segments.append(MessageSegment.at(qq.group(1)))
-            elif re.match(r"\[pic,.+?\]", segment_str):  # Image segment
-                assert event
-                segments.append(await self._image_s2m(segment_str, event))
-            elif qq := re.search(
-                r"\[Reply,.*?SendQQID=(\d+),.*?\]", segment_str
-            ):  # Reply segment
-                segments.append(MessageSegment.at(qq.group(1)))
-            else:  # Plain text
-                segments.append(
-                    segment_str.replace("\u005b", "[").replace("\u005d", "]")
+        last_end = 0
+        for match in matches:
+            start, end = match.span()
+            if start > last_end:
+                segment_str = (
+                    s[last_end:start].replace("\u005b", "[").replace("\u005d", "]")
                 )
+                segments.append(segment_str)
+
+            if match.group(2):  # @提及片段
+                segments.append(MessageSegment.at(match.group(2)))
+            elif match.group(3):  # 图片片段
+                assert event
+                segments.append(await self._image_s2m(match.group(3), event))
+            elif match.group(5):  # 回复片段
+                segments.append(MessageSegment.at(match.group(5)))
+
+            last_end = end
+
+        # 捕获最后一个匹配后的任何剩余纯文本
+        if last_end < len(s):
+            segment_str = s[last_end:].replace("\u005b", "[").replace("\u005d", "]")
+            segments.append(segment_str)
 
         return Message(segments)
