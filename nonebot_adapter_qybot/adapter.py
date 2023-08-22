@@ -12,8 +12,9 @@ from nonebot.utils import escape_tag
 
 from .api import API_HANDLERS
 from .config import Config
+from .event import Event as RawEvent
 from .exception import ActionFailed
-from .models import Event as RawEvent
+from .message import MessageFormatter
 from .utils import Log
 
 RECONNECT_INTERVAL = 3.0
@@ -28,6 +29,7 @@ class Adapter(BaseAdapter):
         self.ws_url = f"ws://{self.adap_config.qy_host}:{self.adap_config.qy_port}/event?token={self.adap_config.qy_token}"
         self.http_url = f"http://{self.adap_config.qy_host}:{self.adap_config.qy_port}"
         self.bots: Dict[str, Bot] = {}
+        self.formatter = MessageFormatter(self)
         self.setup()
 
     @classmethod
@@ -108,7 +110,8 @@ class Adapter(BaseAdapter):
             try:
                 if raw_event := RawEvent.from_json(payload):
                     await self._handle_event(
-                        raw_event.botId, raw_event.to_onebot11_event()
+                        raw_event.botId,
+                        await raw_event.to_onebot11_event(self.formatter),
                     )
                 else:
                     Log.warning(
@@ -178,15 +181,17 @@ class Adapter(BaseAdapter):
                 )
 
     async def post(self, path: str, **data) -> Dict[str, Any]:
+        Log.trace(data)
+        path = path.strip("/")
         data = await self.request(
             Request(
                 "POST",
-                url=f"{self.http_url}/{path}",
+                url=f"{self.http_url}/{path}/",
                 headers={
                     "X-Token": self.adap_config.qy_token,
                     "Content-Type": "application/json",
                 },
-                data=data,
+                json=data,
             )
         )
 
@@ -203,4 +208,4 @@ class Adapter(BaseAdapter):
         api_handler = API_HANDLERS.get(api, None)
         if api_handler is None:
             raise ApiNotAvailable
-        return await api_handler(self,botId=bot.self_id, **data)
+        return await api_handler(self, botId=bot.self_id, **data)

@@ -32,7 +32,13 @@ async def send_private_msg(
                     **{
                         "botId": botId,
                         "userId": str(user_id),
-                        "content": message,
+                        "content": await adapter.formatter.m2s(
+                            message,
+                            event={
+                                "botId": botId,
+                                "userId": str(user_id),
+                            },
+                        ),
                     },
                 )
             )["messageId"]
@@ -60,11 +66,17 @@ async def send_group_msg(
         "message_id": encode_message_id(
             (
                 await adapter.post(
-                    path="sendUserMessage",
+                    path="sendGroupMessage",
                     **{
                         "botId": botId,
                         "groupId": str(group_id),
-                        "content": message,
+                        "content": await adapter.formatter.m2s(
+                            message,
+                            event={
+                                "botId": botId,
+                                "groupId": str(group_id),
+                            },
+                        ),
                     },
                 )
             )["messageId"]

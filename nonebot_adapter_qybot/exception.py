@@ -26,5 +26,5 @@ class ActionFailed(OneBot11ActionFailed):
 
     def _prepare_body(self, body: dict):
         self.code = body.get("code", None)
-        self.message = body.get("message", None)
+        self.message = body.get("msg", None)
         self.data = body.get("data", None)
